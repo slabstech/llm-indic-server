@@ -11,6 +11,15 @@ huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct
 ```
 
 
+curl -X 'POST' \
+  'https://gaganyatri-llm-indic-server.hf.space/chat' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "what is the capital of karnataka ?"
+}'
+
+
 
 
 ## Table of Contents

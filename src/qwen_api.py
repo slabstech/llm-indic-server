@@ -4,6 +4,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import argparse
 app = FastAPI()
+from fastapi.responses import RedirectResponse
 
 model_name = "Qwen/Qwen2.5-1.5B-Instruct"
 model = None
@@ -15,14 +16,22 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
+
 @app.on_event("startup")
 async def load_model():
     global model, tokenizer
+
+    # Check if CUDA is available
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype="auto",
         device_map="auto"
-    )
+    ).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 @app.post("/chat", response_model=ChatResponse)
@@ -49,6 +58,10 @@ async def chat(request: ChatRequest):
 
     response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
     return ChatResponse(response=response)
+
+@app.get("/")
+async def home():
+    return RedirectResponse(url="/docs")
 
 if __name__ == "__main__":
     import uvicorn
