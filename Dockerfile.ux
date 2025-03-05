@@ -1,0 +1,27 @@
+FROM python:3.10-slim
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    git \
+    ffmpeg \
+    sudo \
+    wget \
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY src/ux/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN useradd -ms /bin/bash appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 7860
+
+# Use absolute path for clarity
+CMD ["python", "/app/src/ux/app.py"]
