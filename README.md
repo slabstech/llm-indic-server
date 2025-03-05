@@ -44,14 +44,10 @@ Large Language Model for Indic Langues
   venv\Scripts\activate
   ```
   3. **Install dependencies**:
-  - For GPU
-      ```bash
-      pip install -r requirements.txt
-      ```
-  - For CPU only
-      ```
-      pip install -r cpu-requirements.txt
-      ```
+  - ```bash
+    pip install -r requirements.txt
+    ```
+
 
 ### Downloading LLM Models
 Models can be downloaded from  HuggingFace repository:
