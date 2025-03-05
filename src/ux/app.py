@@ -3,7 +3,6 @@ import os
 import requests
 import json
 import logging
-from mistralai import Mistral
 
 # Set up logging
 logging.basicConfig(filename='execution.log', level=logging.INFO,
@@ -110,12 +109,12 @@ with gr.Blocks(title="Indian language Query") as demo:
 
     query_input = gr.Textbox(label="Enter your text query / ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ನಮೂದಿಸಿ", lines=2, placeholder="ಕರ್ನಾಟಕದ ರಾಜಧಾನಿ ಯಾವುದು ?")
     submit_button = gr.Button("Submit")
-    mistral_output = gr.Textbox(label="Answer / ಉತ್ತರ", interactive=False)
+    dhwani_output = gr.Textbox(label="Answer / ಉತ್ತರ", interactive=False)
 
     submit_button.click(
         fn=send_llm,
         inputs=query_input,
-        outputs=mistral_output
+        outputs=dhwani_output
     )
 
 # Launch the interface with share=True

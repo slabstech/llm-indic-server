@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import argparse
-app = FastAPI()
+
 from fastapi.responses import RedirectResponse
 
 model_name = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -16,29 +16,32 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
+app = FastAPI()
 
-@app.on_event("startup")
-async def load_model():
+
+@app.middleware("http")
+async def lazy_load_model(request: Request, call_next):
     global model, tokenizer
 
-    # Check if CUDA is available
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    if model is None or tokenizer is None:
+        # Check if CUDA is available
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype="auto",
-        device_map="auto"
-    ).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype="auto",
+            device_map="auto"
+        ).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     prompt = request.prompt
     messages = [
-        {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."},
+        {"role": "system", "content": "You are Dhwani, built for Indian languages. You are a helpful assistant. Provide a concise response in one sentence maximum to the user's query."},
         {"role": "user", "content": prompt}
     ]
     text = tokenizer.apply_chat_template(
