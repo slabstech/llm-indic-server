@@ -1,0 +1,4 @@
+torch
+transormers
+accelerate
+IndicTransToolkit @ git+https://github.com/VarunGumma/IndicTransToolkit.git@399b3fec93d2ee85cb998cb7a4fb7a7d83afcbcf

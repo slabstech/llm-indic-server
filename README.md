@@ -91,7 +91,30 @@ print(response)
   - python llm_code.py
 
 
+### Other llms 
 
+- ```pip install -r indic-requirements.txt```
+
+- ```python src/local/translate_llm.py```
+
+
+### For server Development 
+#### Running with FastAPI Server
+Run the server using FastAPI with the desired model:
+- ```bash
+  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0
+  ```
+
+
+## Contact
+- For any questions or issues, please open an issue on GitHub or contact us via email.
+- For collaborations
+  - Join the discord group - [invite link](https://discord.gg/WZMCerEZ2P) 
+- For business queries, Email : info (at) slabstech (dot) com
+
+
+
+<!-- 
 ### Downloading LLM Models
 Models can be downloaded from  HuggingFace repository:
 
@@ -121,27 +144,7 @@ huggingface-cli download ai4bharat/indictrans2-en-indic-dist-200M
   ```bash 
   src/ux/app_local.py
   ```
-
-
-### For server Development 
-#### Running with FastAPI Server
-Run the server using FastAPI with the desired model:
-- for GPU
-  ```bash
-  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0 --device gpu
-  ```
-- for CPU only
-  ```bash
-  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0 --device cpu
-  ```
-
-
-## Contact
-- For any questions or issues, please open an issue on GitHub or contact us via email.
-- For collaborations
-  - Join the discord group - [invite link](https://discord.gg/WZMCerEZ2P) 
-- For business queries, Email : info (at) slabstech (dot) com
-
+-->
 
 <!-- 
 ## Evaluating Results
