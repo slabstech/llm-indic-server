@@ -6,24 +6,9 @@ Large Language Model for Indic Langues
 
 ## Table of Contents
 - [Getting Started](#getting-started-development)
-    - [Prerequisites](#prerequisites)
-    - [Steps](#steps)
-  - [For Development (Local)](#for-development-local)
-    - [Prerequisites](#prerequisites-1)
-    - [Steps](#steps-1)
-- [Downloading LLM Models](#downloading-llm-models)
-- [Running locally with Gradio](#local-gradio-development)
+- [Execute Sample LLM](#run-sample-code)
+- [Other llms](#other-llms)
 - [Running with FastAPI Server](#running-with-fastapi-server)
-- [Live Server](#live-server)
-- [Evaluating Results](#evaluating-results)
-- [Building Docker Image](#building-docker-image)
-  - [Run the Docker Image](#run-the-docker-image)
-- [Troubleshooting](#troubleshooting)
-- [References](#references)
-- [Additional Resources](#additional-resources)
-  - [Running Nemo Model](#running-nemo-model)
-  - [Running with Transformers](#running-with-transformers)
-
 
 ## Getting Started - Development
 
@@ -47,7 +32,7 @@ Large Language Model for Indic Langues
     pip install -r requirements.txt
     ```
 
-- Simple llm Code
+### Run Sample Code
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -87,8 +72,8 @@ print(response)
 
 ```
 
-- Run code
-  - python llm_code.py
+ #### Run code
+  - ```python llm_code.py```
 
 
 ### Other llms 
@@ -104,7 +89,6 @@ Run the server using FastAPI with the desired model:
 - ```bash
   python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0
   ```
-
 
 ## Contact
 - For any questions or issues, please open an issue on GitHub or contact us via email.
