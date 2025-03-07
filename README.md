@@ -6,30 +6,14 @@ Large Language Model for Indic Langues
 
 ## Table of Contents
 - [Getting Started](#getting-started-development)
-  - [For Production (Docker)](#for-production-docker)
-    - [Prerequisites](#prerequisites)
-    - [Steps](#steps)
-  - [For Development (Local)](#for-development-local)
-    - [Prerequisites](#prerequisites-1)
-    - [Steps](#steps-1)
-- [Downloading LLM Models](#downloading-llm-models)
-- [Running locally with Gradio](#local-gradio-development)
+- [Execute Sample LLM](#run-sample-code)
+- [Other llms](#other-llms)
 - [Running with FastAPI Server](#running-with-fastapi-server)
-- [Live Server](#live-server)
-- [Evaluating Results](#evaluating-results)
-- [Building Docker Image](#building-docker-image)
-  - [Run the Docker Image](#run-the-docker-image)
-- [Troubleshooting](#troubleshooting)
-- [References](#references)
-- [Additional Resources](#additional-resources)
-  - [Running Nemo Model](#running-nemo-model)
-  - [Running with Transformers](#running-with-transformers)
-
 
 ## Getting Started - Development
 
 ### For Development (Local)
-- **Prerequisites**: Python 3.6+
+- **Prerequisites**: Python 3.10
 - **Steps**:
   1. **Create a virtual environment**:
   ```bash
@@ -48,7 +32,73 @@ Large Language Model for Indic Langues
     pip install -r requirements.txt
     ```
 
+### Run Sample Code
 
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype="auto",
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+prompt = "Give me a short introduction to large language model."
+messages = [
+    {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."},
+    {"role": "user", "content": prompt}
+]
+text = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,
+    add_generation_prompt=True
+)
+model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+generated_ids = model.generate(
+    **model_inputs,
+    max_new_tokens=512
+)
+generated_ids = [
+    output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+]
+
+response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+print(response)
+
+```
+
+ #### Run code
+  - ```python llm_code.py```
+
+
+### Other llms 
+
+- ```pip install -r indic-requirements.txt```
+
+- ```python src/local/translate_llm.py```
+
+
+### For server Development 
+#### Running with FastAPI Server
+Run the server using FastAPI with the desired model:
+- ```bash
+  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0
+  ```
+
+## Contact
+- For any questions or issues, please open an issue on GitHub or contact us via email.
+- For collaborations
+  - Join the discord group - [invite link](https://discord.gg/WZMCerEZ2P) 
+- For business queries, Email : info (at) slabstech (dot) com
+
+
+
+<!-- 
 ### Downloading LLM Models
 Models can be downloaded from  HuggingFace repository:
 
@@ -78,19 +128,7 @@ huggingface-cli download ai4bharat/indictrans2-en-indic-dist-200M
   ```bash 
   src/ux/app_local.py
   ```
-
-
-### For server Development 
-#### Running with FastAPI Server
-Run the server using FastAPI with the desired model:
-- for GPU
-  ```bash
-  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0 --device gpu
-  ```
-- for CPU only
-  ```bash
-  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0 --device cpu
-  ```
+-->
 
 <!-- 
 ## Evaluating Results
@@ -122,11 +160,6 @@ docker run --gpus all -it --rm -p 7860:7860 slabstech/llm_indic_server
 ```
 -->
 
-## Contact
-- For any questions or issues, please open an issue on GitHub or contact us via email.
-- For collaborations
-  - Join the discord group - [invite link](https://discord.gg/WZMCerEZ2P) 
-- For business queries, Email : info (at) slabstech (dot) com
 
 <!-- 
 ## References
