@@ -1,34 +1,38 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer, BitsAndBytesConfig, Gemma3ForCausalLM
+import torch
 
-model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+model_id = "google/gemma-3-1b-it"
 
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype="auto",
-    device_map="auto"
-)
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-prompt = "Give me a short introduction to large language model."
+model = Gemma3ForCausalLM.from_pretrained(
+    model_id, quantization_config=quantization_config
+).eval()
+
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
 messages = [
-    {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."},
-    {"role": "user", "content": prompt}
+    [
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": "You are a helpful assistant."},]
+        },
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "Write a poem on Hugging Face, the company"},]
+        },
+    ],
 ]
-text = tokenizer.apply_chat_template(
+inputs = tokenizer.apply_chat_template(
     messages,
-    tokenize=False,
-    add_generation_prompt=True
-)
-model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+    add_generation_prompt=True,
+    tokenize=True,
+    return_dict=True,
+    return_tensors="pt",
+).to(model.device).to(torch.bfloat16)
 
-generated_ids = model.generate(
-    **model_inputs,
-    max_new_tokens=512
-)
-generated_ids = [
-    output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-]
 
-response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+with torch.inference_mode():
+    outputs = model.generate(**inputs, max_new_tokens=64)
 
-print(response)
+outputs = tokenizer.batch_decode(outputs)
