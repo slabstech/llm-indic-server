@@ -117,7 +117,7 @@ async def call_external_translation(sentences: List[str], src_lang: str, tgt_lan
                 "accept": "application/json",
                 "Content-Type": "application/json"
             },
-            timeout=10
+            timeout=60
         )
         response.raise_for_status()
         translations = response.json().get("translations", [])
