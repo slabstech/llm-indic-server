@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
+# Enable TensorFloat32 for matrix multiplications (NVIDIA Ampere+ GPUs)
+torch.set_float32_matmul_precision('high')  # or 'medium' for BF16-based mixed precision[^5]
+
 app = FastAPI()
 
 # Model initialization
@@ -13,8 +16,8 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto"
 )
 
-# Compile model - remove fullgraph=True if errors occur
-model = torch.compile(model)
+# Compile with recommended settings for TF32 optimization
+model = torch.compile(model, mode='reduce-overhead')
 
 @app.post("/generate")
 async def generate_text(prompt: str, max_length: int = 200):
@@ -23,7 +26,9 @@ async def generate_text(prompt: str, max_length: int = 200):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=max_length
+            max_new_tokens=max_length,
+            do_sample=True,
+            temperature=0.7
         )
 
     return {
