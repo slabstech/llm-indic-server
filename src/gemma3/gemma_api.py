@@ -108,7 +108,9 @@ async def completion(request: CompletionRequest):
 @app.post("/v1/vision/completions")
 async def vision_completion(
     image: UploadFile = File(...),
-    request: VisionRequest = None,
+    prompt: str = Form(...),
+    max_tokens: int = Form(200),
+    temperature: float = Form(0.7)
 ):
     try:
         # Validate image
@@ -123,15 +125,15 @@ async def vision_completion(
         vision_output = "Image features placeholder"
         
         # Construct multimodal prompt
-        combined_prompt = f"Image analysis: {vision_output}\nUser prompt: {request.prompt}"
+        combined_prompt = f"Image analysis: {vision_output}\nUser prompt: {prompt}"
         
         inputs = tokenizer(combined_prompt, return_tensors="pt").to("cuda")
         
         with torch.no_grad():
             outputs = llm_model.generate(
                 **inputs,
-                max_new_tokens=request.max_tokens,
-                temperature=request.temperature,
+                max_new_tokens=max_tokens,
+                temperature=temperature,
                 do_sample=True
             )
             
