@@ -31,7 +31,7 @@ SUPPORTED_LANGUAGES = {
 }
 
 class Settings(BaseSettings):
-    llm_model_name: str = "google/gemma-3-4b-it"
+    llm_model_name: str = "google/gemma-3-27b-it"
     max_tokens: int = 512
     host: str = "0.0.0.0"
     port: int = 7860
