@@ -1,7 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 from PIL import Image
 import io
 from typing import List
@@ -16,21 +16,17 @@ app = FastAPI(
 )
 
 # Model initialization
-MODEL_NAME = "google/gemma-3-4b-it"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-llm_model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
+MODEL_ID = "google/gemma-3-4b-it"
+model = Gemma3ForConditionalGeneration.from_pretrained(
+    MODEL_ID,
     torch_dtype=torch.bfloat16,
     device_map="auto"
-)
-llm_model = torch.compile(llm_model, mode='reduce-overhead')
-
-# Placeholder for vision model (replace with actual implementation)
-vision_model = None
+).eval()
+processor = AutoProcessor.from_pretrained(MODEL_ID)
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: List[dict]
 
 class ChatCompletionRequest(BaseModel):
     model: str = "gemma-3b-it"
@@ -38,35 +34,38 @@ class ChatCompletionRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 200
 
-class CompletionRequest(BaseModel):
-    model: str = "gemma-3b-it"
-    prompt: str
-    temperature: float = 0.7
-    max_tokens: int = 200
-
-class VisionRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 200
-    temperature: float = 0.7
-
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     try:
-        prompt = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
-        prompt += "\nassistant:"
-        
-        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-        
-        with torch.no_grad():
-            outputs = llm_model.generate(
+        # Convert messages to Hugging Face format
+        hf_messages = []
+        for msg in request.messages:
+            hf_messages.append({
+                "role": msg.role,
+                "content": msg.content
+            })
+
+        inputs = processor.apply_chat_template(
+            hf_messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt"
+        ).to(model.device)
+
+        input_len = inputs["input_ids"].shape[-1]
+
+        with torch.inference_mode():
+            generation = model.generate(
                 **inputs,
                 max_new_tokens=request.max_tokens,
                 temperature=request.temperature,
                 do_sample=True
             )
-            
-        response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        
+            generation = generation[0][input_len:]
+
+        response = processor.decode(generation, skip_special_tokens=True)
+
         return {
             "object": "chat.completion",
             "choices": [{
@@ -76,32 +75,7 @@ async def chat_completion(request: ChatCompletionRequest):
                 }
             }]
         }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v1/completions")
-async def completion(request: CompletionRequest):
-    try:
-        inputs = tokenizer(request.prompt, return_tensors="pt").to("cuda")
-        
-        with torch.no_grad():
-            outputs = llm_model.generate(
-                **inputs,
-                max_new_tokens=request.max_tokens,
-                temperature=request.temperature,
-                do_sample=True
-            )
-            
-        response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        
-        return {
-            "object": "text_completion",
-            "choices": [{
-                "text": response
-            }]
-        }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -120,25 +94,39 @@ async def vision_completion(
         # Process image
         image_data = await image.read()
         img = Image.open(io.BytesIO(image_data))
-        
-        # Replace with actual vision model processing
-        vision_output = "Image features placeholder"
-        
-        # Construct multimodal prompt
-        combined_prompt = f"Image analysis: {vision_output}\nUser prompt: {prompt}"
-        
-        inputs = tokenizer(combined_prompt, return_tensors="pt").to("cuda")
-        
-        with torch.no_grad():
-            outputs = llm_model.generate(
+
+        # Create message format
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": img},
+                    {"type": "text", "text": prompt}
+                ]
+            }
+        ]
+
+        inputs = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt"
+        ).to(model.device)
+
+        input_len = inputs["input_ids"].shape[-1]
+
+        with torch.inference_mode():
+            generation = model.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
                 temperature=temperature,
                 do_sample=True
             )
-            
-        response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        
+            generation = generation[0][input_len:]
+
+        response = processor.decode(generation, skip_special_tokens=True)
+
         return {
             "object": "vision.completion",
             "choices": [{
@@ -148,7 +136,7 @@ async def vision_completion(
                 }
             }]
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
