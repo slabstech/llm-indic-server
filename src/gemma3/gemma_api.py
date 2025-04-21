@@ -6,7 +6,7 @@ from PIL import Image
 import io
 from typing import List
 
-# Enable TF32 and CUDA optimizations
+# Enable CUDA optimizations
 torch.set_float32_matmul_precision('high')
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -26,15 +26,16 @@ model = Gemma3ForConditionalGeneration.from_pretrained(
     device_map="auto"
 ).eval()
 
+# Initialize processor WITHOUT .to(device) - processors don't need GPU
 processor = AutoProcessor.from_pretrained(
     MODEL_ID,
     use_fast=True  # Critical optimization
-).to(device)  # Processor on GPU
+)
 
 class MessageContentItem(BaseModel):
     type: str
     text: str = None
-    image: str = None  # URL/path for non-upload scenarios
+    image: str = None
 
 class Message(BaseModel):
     role: str
@@ -67,7 +68,7 @@ async def chat_completion(request: ChatCompletionRequest):
             tokenize=True,
             return_dict=True,
             return_tensors="pt"
-        ).to(device)
+        ).to(device)  # Move TENSORS to GPU
 
         input_len = inputs["input_ids"].shape[-1]
 
@@ -121,18 +122,18 @@ async def vision_completion(
             }
         ]
 
-        # Process on GPU
+        # Process and move tensors to GPU
         inputs = processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
             return_tensors="pt"
-        ).to(device)
+        ).to(device)  # Critical: Move processed tensors to GPU
 
         input_len = inputs["input_ids"].shape[-1]
 
-        # Optimized CUDA generation
+        # CUDA-accelerated generation
         with torch.inference_mode():
             generation = model.generate(
                 **inputs,
