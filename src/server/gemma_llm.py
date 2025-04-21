@@ -1,23 +1,19 @@
 import torch
 from logging_config import logger
-from transformers import AutoProcessor, Gemma3ForConditionalGeneration, BitsAndBytesConfig
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 from PIL import Image
 from fastapi import HTTPException
 from io import BytesIO
 
-# Define 4-bit quantization config for better precision and performance
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",           # Normalized float 4-bit
-    bnb_4bit_use_double_quant=True,      # Double quantization for better accuracy
-    bnb_4bit_compute_dtype=torch.bfloat16  # Consistent compute dtype
-)
-
 class LLMManager:
-    def __init__(self, model_name: str, device: str = "cuda" if torch.cuda.is_available() else "cpu"):
+    def __init__(self, model_name: str, device: str = "cuda"):
+        if not torch.cuda.is_available():
+            logger.error("CUDA is not available on this system.")
+            raise RuntimeError("CUDA is required but not available.")
+        
         self.model_name = model_name
         self.device = torch.device(device)
-        self.torch_dtype = torch.bfloat16 if self.device.type != "cpu" else torch.float32  # Align dtype with quantization
+        self.torch_dtype = torch.bfloat16  # Use bfloat16 for CUDA
         self.model = None
         self.is_loaded = False
         self.processor = None
@@ -27,9 +23,8 @@ class LLMManager:
         if self.is_loaded:
             del self.model
             del self.processor
-            if self.device.type == "cuda":
-                torch.cuda.empty_cache()
-                logger.info(f"GPU memory allocated after unload: {torch.cuda.memory_allocated()}")
+            torch.cuda.empty_cache()
+            logger.info(f"GPU memory allocated after unload: {torch.cuda.memory_allocated()}")
             self.is_loaded = False
             logger.info(f"LLM {self.model_name} unloaded from {self.device}")
 
@@ -39,12 +34,11 @@ class LLMManager:
                 self.model = Gemma3ForConditionalGeneration.from_pretrained(
                     self.model_name,
                     device_map="auto",
-                    quantization_config=quantization_config,
                     torch_dtype=self.torch_dtype
                 ).eval()
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
                 self.is_loaded = True
-                logger.info(f"LLM {self.model_name} loaded on {self.device} with 4-bit quantization")
+                logger.info(f"LLM {self.model_name} loaded on {self.device} with bfloat16 precision")
             except Exception as e:
                 logger.error(f"Failed to load model: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Model loading failed: {str(e)}")
@@ -64,7 +58,6 @@ class LLMManager:
             }
         ]
 
-        # Process the chat template
         try:
             inputs_vlm = self.processor.apply_chat_template(
                 messages_vlm,
@@ -81,17 +74,15 @@ class LLMManager:
 
         input_len = inputs_vlm["input_ids"].shape[-1]
 
-        # Generate response with improved settings
         with torch.inference_mode():
             generation = self.model.generate(
                 **inputs_vlm,
-                max_new_tokens=max_tokens,  # Increased for coherence
-                do_sample=True,             # Enable sampling for variability
-                temperature=temperature     # Control creativity
+                max_new_tokens=max_tokens,
+                do_sample=True,
+                temperature=temperature
             )
             generation = generation[0][input_len:]
 
-        # Decode the output
         response = self.processor.decode(generation, skip_special_tokens=True)
         logger.info(f"Generated response: {response}")
         return response
@@ -111,17 +102,14 @@ class LLMManager:
             }
         ]
 
-        # Add text prompt
         messages_vlm[1]["content"].append({"type": "text", "text": query})
 
-        # Handle image if valid
         if image and image.size[0] > 0 and image.size[1] > 0:
             messages_vlm[1]["content"].insert(0, {"type": "image", "image": image})
             logger.info(f"Received valid image for processing")
         else:
             logger.info("No valid image provided, processing text only")
 
-        # Process the chat template
         try:
             inputs_vlm = self.processor.apply_chat_template(
                 messages_vlm,
@@ -137,17 +125,15 @@ class LLMManager:
 
         input_len = inputs_vlm["input_ids"].shape[-1]
 
-        # Generate response
         with torch.inference_mode():
             generation = self.model.generate(
                 **inputs_vlm,
-                max_new_tokens=512,  # Increased for coherence
-                do_sample=True,      # Enable sampling
-                temperature=0.7      # Control creativity
+                max_new_tokens=512,
+                do_sample=True,
+                temperature=0.7
             )
             generation = generation[0][input_len:]
 
-        # Decode the output
         decoded = self.processor.decode(generation, skip_special_tokens=True)
         logger.info(f"Vision query response: {decoded}")
         return decoded
@@ -167,17 +153,14 @@ class LLMManager:
             }
         ]
 
-        # Add text prompt
         messages_vlm[1]["content"].append({"type": "text", "text": query})
 
-        # Handle image if valid
         if image and image.size[0] > 0 and image.size[1] > 0:
             messages_vlm[1]["content"].insert(0, {"type": "image", "image": image})
             logger.info(f"Received valid image for processing")
         else:
             logger.info("No valid image provided, processing text only")
 
-        # Process the chat template
         try:
             inputs_vlm = self.processor.apply_chat_template(
                 messages_vlm,
@@ -193,17 +176,15 @@ class LLMManager:
 
         input_len = inputs_vlm["input_ids"].shape[-1]
 
-        # Generate response
         with torch.inference_mode():
             generation = self.model.generate(
                 **inputs_vlm,
-                max_new_tokens=512,  # Increased for coherence
-                do_sample=True,      # Enable sampling
-                temperature=0.7      # Control creativity
+                max_new_tokens=512,
+                do_sample=True,
+                temperature=0.7
             )
             generation = generation[0][input_len:]
 
-        # Decode the output
         decoded = self.processor.decode(generation, skip_special_tokens=True)
         logger.info(f"Chat_v2 response: {decoded}")
         return decoded
