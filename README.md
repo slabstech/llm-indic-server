@@ -90,7 +90,7 @@ outputs = tokenizer.batch_decode(outputs)
 #### Running with FastAPI Server
 Run the server using FastAPI with the desired model:
 - ```bash
-  python src/server/qwen_api.py --port 7860 --language kn --host 0.0.0.0
+  python src/server/main.py --port 7860 --host 0.0.0.0
   ```
 
 ## Contact

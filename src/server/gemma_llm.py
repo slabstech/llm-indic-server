@@ -1,18 +1,19 @@
 import torch
 from logging_config import logger
-from transformers import AutoProcessor, Gemma3ForConditionalGeneration, BitsAndBytesConfig
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration #, BitsAndBytesConfig
 from PIL import Image
 from fastapi import HTTPException
 from io import BytesIO
 
 # Define 4-bit quantization config for better precision and performance
+'''
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_quant_type="nf4",           # Normalized float 4-bit
     bnb_4bit_use_double_quant=True,      # Double quantization for better accuracy
     bnb_4bit_compute_dtype=torch.bfloat16  # Consistent compute dtype
 )
-
+'''
 class LLMManager:
     def __init__(self, model_name: str, device: str = "cuda" if torch.cuda.is_available() else "cpu"):
         self.model_name = model_name
@@ -39,7 +40,7 @@ class LLMManager:
                 self.model = Gemma3ForConditionalGeneration.from_pretrained(
                     self.model_name,
                     device_map="auto",
-                    quantization_config=quantization_config,
+                    #quantization_config=quantization_config,
                     torch_dtype=self.torch_dtype
                 ).eval()
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
