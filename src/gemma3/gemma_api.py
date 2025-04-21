@@ -6,27 +6,39 @@ from PIL import Image
 import io
 from typing import List
 
-# Enable TF32 for matrix multiplications
+# Enable TF32 and CUDA optimizations
 torch.set_float32_matmul_precision('high')
+torch.backends.cuda.matmul.allow_tf32 = True
 
 app = FastAPI(
     title="Gemma 3B Multi-Modal API",
-    description="OpenAI-style API with Vision capabilities",
+    description="CUDA-optimized API with Fast Image Processing",
     version="1.0.0",
 )
 
 # Model initialization
 MODEL_ID = "google/gemma-3-4b-it"
+device = "cuda"  # Force CUDA usage
+
 model = Gemma3ForConditionalGeneration.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.bfloat16,
     device_map="auto"
 ).eval()
-processor = AutoProcessor.from_pretrained(MODEL_ID)
+
+processor = AutoProcessor.from_pretrained(
+    MODEL_ID,
+    use_fast=True  # Critical optimization
+).to(device)  # Processor on GPU
+
+class MessageContentItem(BaseModel):
+    type: str
+    text: str = None
+    image: str = None  # URL/path for non-upload scenarios
 
 class Message(BaseModel):
     role: str
-    content: List[dict]
+    content: List[MessageContentItem]
 
 class ChatCompletionRequest(BaseModel):
     model: str = "gemma-3b-it"
@@ -37,21 +49,25 @@ class ChatCompletionRequest(BaseModel):
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     try:
-        # Convert messages to Hugging Face format
+        # Convert messages to processor format
         hf_messages = []
         for msg in request.messages:
-            hf_messages.append({
-                "role": msg.role,
-                "content": msg.content
-            })
+            content_items = []
+            for item in msg.content:
+                if item.type == "text":
+                    content_items.append({"type": "text", "text": item.text})
+                elif item.type == "image":
+                    content_items.append({"type": "image", "image": item.image})
+            hf_messages.append({"role": msg.role, "content": content_items})
 
+        # Process and generate
         inputs = processor.apply_chat_template(
             hf_messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
             return_tensors="pt"
-        ).to(model.device)
+        ).to(device)
 
         input_len = inputs["input_ids"].shape[-1]
 
@@ -87,15 +103,14 @@ async def vision_completion(
     temperature: float = Form(0.7)
 ):
     try:
-        # Validate image
+        # Validate and process image
         if not image.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="File must be an image")
 
-        # Process image
         image_data = await image.read()
         img = Image.open(io.BytesIO(image_data))
 
-        # Create message format
+        # Create message with image tensor
         messages = [
             {
                 "role": "user",
@@ -106,22 +121,25 @@ async def vision_completion(
             }
         ]
 
+        # Process on GPU
         inputs = processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
             return_tensors="pt"
-        ).to(model.device)
+        ).to(device)
 
         input_len = inputs["input_ids"].shape[-1]
 
+        # Optimized CUDA generation
         with torch.inference_mode():
             generation = model.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
                 temperature=temperature,
-                do_sample=True
+                do_sample=True,
+                pad_token_id=processor.tokenizer.pad_token_id
             )
             generation = generation[0][input_len:]
 
