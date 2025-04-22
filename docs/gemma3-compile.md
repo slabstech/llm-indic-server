@@ -17,3 +17,6 @@ pip install accelerate pillow torchvision fastapi uvicorn python-multipart
 
 
 - https://github.com/huggingface/transformers
+
+- Function calling - https://www.philschmid.de/gemma-function-calling
+- https://github.com/philschmid/gemini-samples/blob/main/examples/gemma-function-calling.ipynb

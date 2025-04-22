@@ -1,4 +1,7 @@
-torch
-transformers
-accelerate
-bitsandbytes
+transformers @ git+https://github.com/huggingface/transformers.git@e5ac23081ec4021818a21d7442d396f31de8c30c
+accelerate 
+pillow 
+torchvision 
+fastapi 
+uvicorn 
+python-multipart
