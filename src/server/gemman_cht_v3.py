@@ -1,30 +1,25 @@
-# chat_with_gemma_function_calling.py
-
 import torch
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 import re
 
-# Example function registry
+# Function Registry
 def get_current_time():
+    """Returns the current time as a string."""
     from datetime import datetime
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def add_numbers(a, b):
+    """Adds two numbers and returns the result as a string."""
     return str(float(a) + float(b))
 
-# Map function names to actual Python functions
 FUNCTION_REGISTRY = {
     "get_current_time": get_current_time,
     "add_numbers": add_numbers,
 }
 
 class LocalGemmaChat:
-    """
-    Chat interface for Gemma 3 models with robust function calling support.
-    Handles code blocks and print-wrapped function calls.
-    """
-
     def __init__(self, model_id="google/gemma-3-4b-it"):
+        """Initialize the chat system with the model and a clear system prompt."""
         self.model_id = model_id
         self.model = Gemma3ForConditionalGeneration.from_pretrained(
             model_id, device_map="auto"
@@ -34,46 +29,63 @@ class LocalGemmaChat:
             {
                 "role": "system",
                 "content": [{"type": "text", "text": (
-                    "You are a helpful assistant. You can call functions such as get_current_time() "
-                    "and add_numbers(a, b). If you use a function, output it as a Python code block. "
-                    "After you receive the function result, explain the result to the user in natural language."
+                    "You are a helpful assistant. You can call predefined functions such as "
+                    "get_current_time() and add_numbers(a, b). To call a function, output a "
+                    "Python code block with a direct call to the function, like "
+                    "print(get_current_time()) or print(add_numbers(3, 5)). "
+                    "Do not define new functions."
                 )}]
             }
         ]
 
     def _extract_function_call(self, text):
         """
-        Extract function call from model output.
-        Handles code blocks and print-wrapped calls.
-        Returns (function_name, args) or (None, None)
+        Extract a function call from the text if it matches a registered function and 
+        contains no function definitions.
+        
+        Args:
+            text (str): The model's output text.
+        
+        Returns:
+            tuple: (function_name, args) if a valid call is found, else (None, None).
         """
-        # Extract code block if present
-        code_match = re.search(r"``````", text)
+        # Look for a code block
+        code_match = re.search(r"```(.*?)```", text, re.DOTALL)
         if code_match:
             code_block = code_match.group(1).strip()
-        else:
-            code_block = text.strip()
-
-        # Look for print-wrapped function call
-        print_match = re.match(r"print\((.+)\)", code_block)
-        if print_match:
-            func_call = print_match.group(1)
-        else:
-            func_call = code_block
-
-        # Now extract function name and arguments
-        match = re.match(r"([a-zA-Z_][a-zA-Z0-9_]*)\((.*?)\)", func_call)
-        if match:
-            func_name = match.group(1)
-            args_str = match.group(2)
-            # Split args by comma, strip whitespace and quotes
-            args = [arg.strip().strip("\"'") for arg in args_str.split(",")] if args_str else []
-            return func_name, args
+            # Check for function definitions
+            lines = code_block.split('\n')
+            for line in lines:
+                if line.strip().startswith('def '):
+                    # Contains function definition, treat as plain text
+                    return None, None
+            # No function definitions, look for a function call
+            print_match = re.search(r"print\((.+)\)", code_block)
+            if print_match:
+                func_call = print_match.group(1).strip()
+            else:
+                func_call = code_block.strip()
+            # Extract function name and arguments
+            match = re.match(r"([a-zA-Z_][a-zA-Z0-9_]*)\((.*?)\)", func_call)
+            if match:
+                func_name = match.group(1)
+                args_str = match.group(2)
+                args = [arg.strip().strip("\"'") for arg in args_str.split(",")] if args_str else []
+                if func_name in FUNCTION_REGISTRY:
+                    return func_name, args
+        # No code block or no registered function call found
         return None, None
 
     def _handle_function_call(self, func_name, args):
         """
-        Execute the function if registered and return its result as a string.
+        Execute the function call and return the result.
+        
+        Args:
+            func_name (str): Name of the function to call.
+            args (list): List of arguments for the function.
+        
+        Returns:
+            str: The function result or an error message.
         """
         func = FUNCTION_REGISTRY.get(func_name)
         if not func:
@@ -85,12 +97,22 @@ class LocalGemmaChat:
             return f"[Error calling '{func_name}': {e}]"
 
     def send_message(self, user_message, max_new_tokens=100):
+        """
+        Send a message to the model and process its response.
+        
+        Args:
+            user_message (str): The user's input message.
+            max_new_tokens (int): Maximum tokens to generate.
+        
+        Returns:
+            str: The assistant's response.
+        """
         self.messages.append({
             "role": "user",
             "content": [{"type": "text", "text": user_message}]
         })
 
-        # Prepare input for the model
+        # Generate model response
         inputs = self.processor.apply_chat_template(
             self.messages, add_generation_prompt=True, tokenize=True,
             return_dict=True, return_tensors="pt"
@@ -105,17 +127,16 @@ class LocalGemmaChat:
 
         decoded = self.processor.decode(generation, skip_special_tokens=True)
 
-        # Check for function call in the model's response
+        # Try to extract and handle a function call
         func_name, args = self._extract_function_call(decoded)
         if func_name:
-            # Function call detected, execute it
             func_result = self._handle_function_call(func_name, args)
             self.messages.append({
                 "role": "function",
                 "name": func_name,
                 "content": [{"type": "text", "text": func_result}]
             })
-            # Optionally, let the model generate a follow-up answer with the function result
+            # Generate a follow-up response
             followup_inputs = self.processor.apply_chat_template(
                 self.messages, add_generation_prompt=True, tokenize=True,
                 return_dict=True, return_tensors="pt"
@@ -131,13 +152,8 @@ class LocalGemmaChat:
                 "role": "assistant",
                 "content": [{"type": "text", "text": followup_decoded}]
             })
-            # Always print function result, even if followup_decoded is empty
-            if followup_decoded.strip():
-                return f"{decoded}\n\n{func_result}\n\n{followup_decoded}"
-            else:
-                return f"{decoded}\n\n{func_result}"
+            return f"{decoded}\n\n{func_result}\n\n{followup_decoded}"
         else:
-            # No function call, just append assistant reply
             self.messages.append({
                 "role": "assistant",
                 "content": [{"type": "text", "text": decoded}]
