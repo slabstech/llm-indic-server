@@ -34,6 +34,7 @@ class LocalGemmaChat:
         self.messages = []
 
     def _extract_function_call(self, text):
+        # Look for code block with a function call
         code_match = re.search(r"``````", text, re.DOTALL)
         if code_match:
             code_block = code_match.group(1).strip()
@@ -79,13 +80,10 @@ class LocalGemmaChat:
         func_name, args = self._extract_function_call(decoded)
         if func_name:
             func_result = self._handle_function_call(func_name, args)
+            # Add result to chat history as assistant
             self.messages.append({
                 "role": "assistant",
-                "content": [{"type": "text", "text": f"Called {func_name} with args {args}"}]
-            })
-            self.messages.append({
-                "role": "system",
-                "content": [{"type": "text", "text": f"Function result: {func_result}"}]
+                "content": [{"type": "text", "text": func_result}]
             })
             return func_result
         else:
@@ -135,7 +133,6 @@ async def lifespan(app: FastAPI):
     chatbot = LocalGemmaChat(model_id="google/gemma-3-4b-it")
     print("Model loaded.")
     yield
-    # Optional: cleanup logic here
 
 app = FastAPI(lifespan=lifespan)
 
@@ -143,7 +140,6 @@ app = FastAPI(lifespan=lifespan)
 async def chat_completions(request: ChatCompletionRequest):
     global chatbot
 
-    # Prepare messages for the chat template
     # Always start with a system prompt
     system_prompt = {
         "role": "system",
