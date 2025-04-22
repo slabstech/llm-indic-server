@@ -1,20 +1,22 @@
 import torch
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 import re
-from datetime import datetime
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
+import time
+import uuid
 
 # Enable TensorFloat32 for performance
 torch.set_float32_matmul_precision('high')
 
 # Function Registry
 def get_current_time():
-    """Returns the current time as a string."""
+    from datetime import datetime
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def add_numbers(a, b):
-    """Adds two numbers and returns the result as a string."""
     return str(float(a) + float(b))
 
 FUNCTION_REGISTRY = {
@@ -24,31 +26,15 @@ FUNCTION_REGISTRY = {
 
 class LocalGemmaChat:
     def __init__(self, model_id="google/gemma-3-4b-it"):
-        """Initialize the chat system with the model and a clear system prompt."""
         self.model_id = model_id
         self.model = Gemma3ForConditionalGeneration.from_pretrained(
             model_id, device_map="auto"
         ).eval()
         self.processor = AutoProcessor.from_pretrained(model_id, use_fast=True)
-        self.messages = [
-            {
-                "role": "system",
-                "content": [{"type": "text", "text": (
-                    "You are a helpful assistant. You can call predefined functions such as "
-                    "get_current_time() and add_numbers(a, b). To call a function, output a "
-                    "Python code block with a direct call to the function, like "
-                    "print(get_current_time()) or print(add_numbers(3, 5)). "
-                    "Do not define new functions."
-                )}]
-            }
-        ]
+        self.messages = []
 
     def _extract_function_call(self, text):
-        """
-        Extract a function call from the text if it matches a registered function and 
-        contains no function definitions.
-        """
-        code_match = re.search(r"```(.*?)```", text, re.DOTALL)
+        code_match = re.search(r"``````", text, re.DOTALL)
         if code_match:
             code_block = code_match.group(1).strip()
             lines = code_block.split('\n')
@@ -67,9 +53,6 @@ class LocalGemmaChat:
         return None, None
 
     def _handle_function_call(self, func_name, args):
-        """
-        Execute the function call and return the result.
-        """
         func = FUNCTION_REGISTRY.get(func_name)
         if not func:
             return f"[Function '{func_name}' not found.]"
@@ -79,15 +62,7 @@ class LocalGemmaChat:
         except Exception as e:
             return f"[Error calling '{func_name}': {e}]"
 
-    def send_message(self, user_message, max_new_tokens=100):
-        """
-        Send a message to the model and process its response.
-        """
-        self.messages.append({
-            "role": "user",
-            "content": [{"type": "text", "text": user_message}]
-        })
-
+    def send_message(self, max_new_tokens=100):
         inputs = self.processor.apply_chat_template(
             self.messages, add_generation_prompt=True, tokenize=True,
             return_dict=True, return_tensors="pt"
@@ -120,61 +95,107 @@ class LocalGemmaChat:
             })
             return decoded
 
-# FastAPI app
-app = FastAPI()
+# OpenAI-compatible request and response models
+class Message(BaseModel):
+    role: str
+    content: str
 
-# Pydantic model for request body (mimicking OpenAI's chat completion request)
-class ChatRequest(BaseModel):
-    messages: list[dict[str, str]]
-    model: str | None = None
-    max_tokens: int | None = 100
-    temperature: float | None = None  # Not used in this example, but included for compatibility
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[Message]
+    max_tokens: Optional[int] = 100
+    temperature: Optional[float] = 0.0
+    top_p: Optional[float] = 1.0
+    stream: Optional[bool] = False
+    stop: Optional[Any] = None
 
-# Initialize the chat model
-chat = LocalGemmaChat()
+class Choice(BaseModel):
+    index: int
+    message: Dict[str, Any]
+    finish_reason: str = "stop"
 
-@app.post("/v1/chat/completions")
-async def chat_completions(request: ChatRequest):
-    """
-    OpenAI API-compatible endpoint for chat completions.
-    """
-    try:
-        # Extract the last user message from the messages list
-        user_message = next(
-            (msg["content"] for msg in request.messages if msg["role"] == "user"),
-            None
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[Choice]
+    usage: Usage
+
+# Lifespan event handler for FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global chatbot
+    print("Loading Gemma model...")
+    chatbot = LocalGemmaChat(model_id="google/gemma-3-4b-it")
+    print("Model loaded.")
+    yield
+    # Optional: cleanup logic here
+
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+async def chat_completions(request: ChatCompletionRequest):
+    global chatbot
+
+    # Prepare messages for the chat template
+    # Always start with a system prompt
+    system_prompt = {
+        "role": "system",
+        "content": [{"type": "text", "text": (
+            "You are a helpful assistant. You can call predefined functions such as "
+            "get_current_time() and add_numbers(a, b). To call a function, output a "
+            "Python code block with a direct call to the function, like "
+            "print(get_current_time()) or print(add_numbers(3, 5)). "
+            "Do not define new functions."
+        )}]
+    }
+
+    # Convert OpenAI-style messages to the format expected by the processor
+    chat_messages = [system_prompt]
+    for msg in request.messages:
+        chat_messages.append({
+            "role": msg.role,
+            "content": [{"type": "text", "text": msg.content}]
+        })
+
+    # Check alternation: after system, must be user, then assistant, etc.
+    roles = [m["role"] for m in chat_messages]
+    # Remove system for alternation check
+    roles_no_system = [r for r in roles if r != "system"]
+    for i in range(1, len(roles_no_system)):
+        if roles_no_system[i] == roles_no_system[i-1]:
+            raise HTTPException(status_code=400, detail="Conversation roles must alternate user/assistant/user/assistant/...")
+
+    # Set messages for the chatbot
+    chatbot.messages = chat_messages
+
+    # Call model and get response
+    response_text = chatbot.send_message(max_new_tokens=request.max_tokens)
+    resp = ChatCompletionResponse(
+        id=f"chatcmpl-{uuid.uuid4().hex[:24]}",
+        created=int(time.time()),
+        model=request.model,
+        choices=[
+            Choice(
+                index=0,
+                message={"role": "assistant", "content": response_text},
+                finish_reason="stop"
+            )
+        ],
+        usage=Usage(
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0
         )
-        if not user_message:
-            raise HTTPException(status_code=400, detail="No user message found in request.")
-
-        # Get the response from the chat model
-        response = chat.send_message(user_message, max_new_tokens=request.max_tokens or 100)
-
-        # Format the response to match OpenAI API structure
-        return {
-            "id": f"chatcmpl-{int(datetime.now().timestamp())}",
-            "object": "chat.completion",
-            "created": int(datetime.now().timestamp()),
-            "model": chat.model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": response
-                    },
-                    "finish_reason": "stop"
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 0,  # Placeholder; actual token counting not implemented
-                "completion_tokens": 0,  # Placeholder
-                "total_tokens": 0  # Placeholder
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    )
+    return resp
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7861)
+    uvicorn.run("llm_tool_call_api:app", host="0.0.0.0", port=7861, reload=True)
