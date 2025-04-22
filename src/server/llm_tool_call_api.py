@@ -87,6 +87,7 @@ class LocalGemmaChat:
             })
             return func_result
         else:
+            # Return the direct decoded text if no function call
             self.messages.append({
                 "role": "assistant",
                 "content": [{"type": "text", "text": decoded}]
