@@ -7,7 +7,7 @@ import io
 # 1. Set up the OpenAI client for your vLLM server
 client = OpenAI(
     api_key="EMPTY",  # vLLM by default does not require authentication
-    base_url="http://localhost:7862/v1"  # Change if your server is on a different host/port
+    base_url="http://localhost:7863/v1"  # Change if your server is on a different host/port
 )
 
 # 2. Load and encode your image as base64

@@ -18,7 +18,7 @@ class ImagePromptRequest(BaseModel):
 # Set up OpenAI client for vLLM server
 client = OpenAI(
     api_key="EMPTY",  # vLLM does not require authentication
-    base_url="http://localhost:7862/v1"  # Adjust if vLLM server is hosted elsewhere
+    base_url="http://localhost:7863/v1"  # Adjust if vLLM server is hosted elsewhere
 )
 
 def process_image(image_source: str | bytes, is_url: bool = True) -> str:
